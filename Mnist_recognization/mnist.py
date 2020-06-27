@@ -2,6 +2,7 @@ import tensorflow as tf
 import  numpy as np
 from sklearn.utils import shuffle
 from sklearn.preprocessing import  OneHotEncoder
+import datetime
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -58,10 +59,16 @@ X_train, Y_train, X_test, Y_test = MNISTLabel_TO_ONEHOT(X_train, Y_train, X_test
 # 以上完成了onhot和shuffle功能
 
 # tf Graph input
-# x = tf.placeholder(tf.float32, shape=(None, n_input)) # shape= [None, 784]
-# y = tf.placeholder(tf.float32, shape=(None, n_classes))  # shape= [None, 10]
+# x = tf.placeholder(dtype = tf.float32, shape=(None, n_input)) # shape= [None, 784]
+# y = tf.placeholder(dtype = tf.float32, shape=(None, n_classes))  # shape= [None, 10]
 x = tf.placeholder("float", [None, n_input])
 y = tf.placeholder("float", [None, n_classes])
+
+def get_now_time_str():
+    time_str = str(datetime.datetime.now())
+    time_str = "_".join(time_str.split(":"))
+    time_str = "_".join(time_str.split(" "))
+    return time_str
 
 # Create model
 def multilayer_perceptron(x, weights, biases):
@@ -90,16 +97,42 @@ biases={
 # 构建模型
 pred = multilayer_perceptron(x, weights, biases)
 
+BASE_DIR_PATH = "OUTPUT_OF_MODEL"
+OUTPUT_DIR_PATH = os.path.join(BASE_DIR_PATH, get_now_time_str() + "_output/")
+MODEL_SAVE_PATH = os.path.join(OUTPUT_DIR_PATH, "models/")
+Thensor_SAVE_PATH = os.path.join(OUTPUT_DIR_PATH, "mnist/")
+# 保存模型
+if not os.path.exists(OUTPUT_DIR_PATH):
+    os.makedirs(OUTPUT_DIR_PATH)
+if not os.path.exists(MODEL_SAVE_PATH):
+    os.makedirs(MODEL_SAVE_PATH)
+if not os.path.exists(Thensor_SAVE_PATH):
+    os.makedirs(Thensor_SAVE_PATH)
+saver = tf.train.Saver()
+
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+correct_prediction = tf.equal(tf.argmax(pred,1),tf.argmax(y,1))
+Accuracy = tf.reduce_mean(tf.cast(correct_prediction,"float"))
 
+# Tensorboard可视化
+tf.summary.scalar("loss", cost)    # summary开头是小写，Saver是大写，Session()是大写，且要带括号
+tf.summary.scalar("acc", Accuracy)
+# tf.summary.histogram("weights", weights)
+# tf.summary.histogram("biases", biases)
+# 合并变量
+merged = tf.summary.merge_all()
+file_writer = tf.summary.FileWriter(Thensor_SAVE_PATH)
 # 初始化变量
 init = tf.global_variables_initializer()
 
 # 开启会话
 with tf.Session() as sess:  # tf.Session()一定要有括号
     sess.run(init)
+    if not os.path.exists(Thensor_SAVE_PATH):
+        os.makedirs(Thensor_SAVE_PATH)
+    file_writer.add_graph(sess.graph)
 
     # 启动循环开始训练
     for epoch in range(training_epochs):
@@ -112,17 +145,24 @@ with tf.Session() as sess:  # tf.Session()一定要有括号
             batch_x = X_train[i * batch_size:(i + 1) * batch_size,:]  # x初始维度为[60000,28,28],要修改成[60000,784]
             batch_x = np.reshape(batch_x,[-1,28*28])
             batch_y = Y_train[i * batch_size:(i + 1) * batch_size,:]
-            correct_prediction = tf.equal(tf.argmax(pred,1),tf.argmax(y,1))
-            Accuracy = tf.reduce_mean(tf.cast(correct_prediction,"float"))
             _, loss, acc = sess.run([optimizer, cost, Accuracy], feed_dict={x:batch_x, y:batch_y})
 
             # Compute average loss
             avg_cost += loss / total_batch
 
+            summary = sess.run(merged, feed_dict={x:batch_x, y:batch_y})  # 切记：此处加上feed_dict
+            file_writer.add_summary(summary, i)
+
         # 显示每一轮训练的详细信息
         if epoch % display_step == 0:
-            print("Epoch:", '%04d' % (epoch + 1), "cost=","{:.9f}".format(avg_cost), "Accuracy:", acc)
+            # 每一轮保存一次模型
+            saver.save(sess, MODEL_SAVE_PATH+"mnist.ckpt")
+            print("Epoch:", '%04d' % (epoch + 1), "avg_cost=","{:.9f}".format(avg_cost), "Accuracy:", acc)
     print("Finished!")
+
+    # 加载模型
+    # if os.path.exists(path):
+    #    saver.restore(sess,path)
 
     # 测试模型
     correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
