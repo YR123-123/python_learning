@@ -7,5 +7,5 @@ def say_hello():
     print("我是 %s" % title)
 
 # 类
-class Cat(object):
+class Dog(object):
     pass
